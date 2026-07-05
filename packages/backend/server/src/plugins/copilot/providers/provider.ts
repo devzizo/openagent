@@ -17,21 +17,33 @@ import { CopilotStorage } from '../storage';
 import {
   buildDocSearchGetter,
   buildSaveDocGetter,
-  createBrowserUseTool,
+  createAgentBrowserTool,
+  createWebFetchTool,
+  createUrlScannerTool,
+  createQuickComputeTool,
+  createDesignGeneratorTool,
+  createDesignSystemTool,
+  createVisualPolishTool,
   createChooseTool,
-  createCloudswayReadTool,
-  createCloudswaySearchTool,
   createCodeArtifactTool,
   createConversationSummaryTool,
   createDocComposeTool,
   createDocSemanticSearchTool,
-  createE2bPythonSandboxTool,
-  createExaCrawlTool,
-  createExaSearchTool,
+  createVercelPythonSandboxTool,
+  createFirecrawlTool,
+  createParallelExtractTool,
+  createParallelSearchTool,
   createMakeItRealTool,
   createMarkTodoTool,
   createTaskAnalysisTool,
   createTodoTool,
+  createImageVisionTool,
+  createTranslatorTool,
+  createCodeReviewerTool,
+  createContentWriterTool,
+  createDataAnalyzerTool,
+  createDocSummarizerTool,
+  createVoiceGeneratorTool,
 } from '../tools';
 import { createPythonCodingTool } from '../tools/python-coding';
 import { CopilotProviderFactory } from './factory';
@@ -127,9 +139,15 @@ export abstract class CopilotProvider<C = any> {
     }
     if (!outputType) return undefined;
 
-    return this.models.find(m =>
+    // First try to find a model with defaultForOutputType flag
+    const defaultModel = this.models.find(m =>
       m.capabilities.some(c => matcher(c) && c.defaultForOutputType)
     );
+    if (defaultModel) return defaultModel;
+
+    // Fallback: return the first model that matches the capability criteria.
+    // This prevents crashes when no model has defaultForOutputType set.
+    return this.models.find(m => m.capabilities.some(matcher));
   }
 
   // make it async to allow dynamic check available models in some providers
@@ -190,9 +208,10 @@ export abstract class CopilotProvider<C = any> {
         }
         switch (tool) {
           case 'browserUse': {
-            tools.browser_use = createBrowserUseTool(
-              writable,
-              this.OpenAgentConfig
+            tools.agent_browser = createAgentBrowserTool(
+              this.OpenAgentConfig,
+              options.sessionId,
+              options.user
             );
             break;
           }
@@ -242,15 +261,15 @@ export abstract class CopilotProvider<C = any> {
             break;
           }
           case 'webSearch': {
-            tools.web_search_exa = createExaSearchTool(this.OpenAgentConfig);
-            tools.web_crawl_exa = createExaCrawlTool(this.OpenAgentConfig);
-            tools.web_search_cloudsway = createCloudswaySearchTool(
+            tools.web_search_parallel = createParallelSearchTool(
               this.OpenAgentConfig
             );
-            tools.web_crawl_cloudsway = createCloudswayReadTool(
+            tools.web_extract_parallel = createParallelExtractTool(
               this.OpenAgentConfig
             );
-
+            tools.web_crawl_firecrawl = createFirecrawlTool(
+              this.OpenAgentConfig
+            );
             break;
           }
           case 'docCompose': {
@@ -281,12 +300,65 @@ export abstract class CopilotProvider<C = any> {
           }
           case 'pythonSandbox': {
             const copilotStorage = this.copilotStorage;
-            tools.e2b_python_sandbox = createE2bPythonSandboxTool(
+            tools.vercel_python_sandbox = createVercelPythonSandboxTool(
               writable,
               this.OpenAgentConfig,
               copilotStorage,
-              options.user || ''
+              options.user || '',
+              options.sessionId
             );
+            break;
+          }
+          case 'webFetch': {
+            tools.web_fetch = createWebFetchTool();
+            break;
+          }
+          case 'urlScanner': {
+            tools.url_scanner = createUrlScannerTool();
+            break;
+          }
+          case 'quickCompute': {
+            tools.quick_compute = createQuickComputeTool();
+            break;
+          }
+          case 'designGenerator': {
+            tools.design_generator = createDesignGeneratorTool();
+            break;
+          }
+          case 'designSystem': {
+            tools.design_system = createDesignSystemTool();
+            break;
+          }
+          case 'visualPolish': {
+            tools.visual_polish = createVisualPolishTool();
+            break;
+          }
+          case 'imageVision': {
+            tools.image_vision = createImageVisionTool();
+            break;
+          }
+          case 'translator': {
+            tools.translator = createTranslatorTool();
+            break;
+          }
+          case 'codeReviewer': {
+            tools.code_reviewer = createCodeReviewerTool();
+            break;
+          }
+          case 'contentWriter': {
+            tools.content_writer = createContentWriterTool();
+            break;
+          }
+          case 'dataAnalyzer': {
+            tools.data_analyzer = createDataAnalyzerTool();
+            break;
+          }
+          case 'docSummarizer': {
+            tools.doc_summarizer = createDocSummarizerTool();
+            break;
+          }
+          case 'voiceGenerator': {
+            tools.voice_generator = createVoiceGeneratorTool();
             break;
           }
         }

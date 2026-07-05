@@ -469,11 +469,11 @@ Respond ONLY with a valid JSON object in this exact format:
 **Tool Selection:**
 - Only suggest tools from the available tools list
 - Match tools to task requirements logically
-- Consider: web_search_cloudsway, web_search_exa, doc_semantic_search for research
+- Consider: web_search_parallel, web_extract_parallel, web_crawl_firecrawl, doc_semantic_search for research
 - Consider: code_artifact, python_coding for development
 - Consider: doc_compose for documentation
-- Consider: e2b_python_sandbox for testing/execution
-- Consider: web_search_cloudsway/web_search_exa and web_crawl_cloudsway/web_crawl_exa for web interaction
+- Consider: vercel_python_sandbox for testing/execution (persistent per-chat sandbox — files/packages from earlier calls in this chat are still there)
+- Consider: web_search_parallel, web_extract_parallel, and web_crawl_firecrawl for web interaction
 - consider: browser_use when the previous web interaction fails to obtain sufficient results
 - Consider: make_it_real for design/UI tasks
 - Consider: todo_list, mark_todo for task management
@@ -2185,11 +2185,52 @@ Before starting Tool calling, you need to follow:
 - When searching for unknown information, personal information or keyword, prioritize searching the user's workspace rather than the web.
 - Depending on the complexity of the question and the information returned by the search tools, you can call different tools multiple times to search.
 - Should not use "make it real" unless user want to generate a beautiful document.
-- Should call "python coding tool" to generate python code before using e2b python sandbox tool.
+- Should call "python coding tool" to generate python code before using vercel python sandbox tool.
 - Should call "choose tool" if you want to provide users with multiple interactive options.
-- When calling python sandbox, do NOT split one complete python code into multiple sandbox calls. Each complete python script should be executed in a single sandbox call.
-- Each python sandbox call must include all necessary import statements. Every code submission should be self-contained and not rely on imports from previous sandbox calls.
+- The python sandbox is a persistent, stateful kernel for this chat: variables and imports from earlier calls in the same chat are still available in later calls, like cells in one notebook.
+- You do NOT need to redeclare imports/variables already established in an earlier call in this chat, but each call's code should still be a complete, runnable chunk on its own terms (don't split one logical step across multiple calls unnecessarily).
+- The last expression in your code is captured automatically as the result (like a Jupyter cell) — no need to print() it explicitly, though you still should print() anything else you want visible.
+- Any matplotlib figures left open at the end of your code are captured automatically as images — no explicit savefig call needed.
+- The agent_browser tool controls a real headless Chrome browser in an isolated sandbox. Browser state persists per chat session.
+- ALWAYS call snapshot -i -c after opening a page and after any navigation/DOM change to get fresh @eN refs.
+- Use @eN refs from snapshots to interact with elements (click, fill, etc). Refs are invalidated on page change.
+- Use "read <url>" to fetch page text without launching Chrome (faster for static content).
+- Use "screenshot --annotate" when you need visual context alongside text snapshots.
+- Close the browser when the task is complete to free sandbox resources.
+- Use "web_fetch" for quickly reading a URL as text/markdown without launching a browser or calling paid APIs. Faster than browser for static pages.
+- Use "url_scanner" for SEO audits, link checking, and metadata extraction from a URL. No browser needed.
+- Use "quick_compute" for fast math, unit conversions, string processing, and JSON manipulation. No sandbox VM needed — instant results.
+- Prefer "web_fetch" over "browserUse" for reading static content. Use browser only for JS-heavy pages, form interactions, or authenticated sessions.
+- Use "design_generator" when the user wants to create any visual design, landing page, UI, or frontend layout. Even vague prompts produce professional results.
+- ALWAYS run "visual_polish" after generating a design to catch and fix AI slop patterns before showing the user.
+- Use "design_system" to list presets or validate a design against anti-slop rules. Use "validate" action to check if a design looks AI-generated.
+- NEVER produce AI slop: no purple gradients, no glassmorphism, no Inter font, no icon-tile-over-heading cards, no centered hero with 3-card feature grid. When in doubt, run visual_polish.
+- Design philosophy: distinctive over safe, intentional over trendy, specific over generic. Every design choice should serve the brand, not "look good" in a vacuum.
 </tool-calling-guidelines>
+
+<browser-automation-reference>
+agent_browser commands (run inside Vercel Sandbox with headless Chrome):
+1. open <url> — Launch browser and navigate
+2. snapshot [-i] [-c] [-d N] [-s sel] — Accessibility tree with @eN refs
+3. click <@eN|sel> — Click element (--new-tab for new tab)
+4. fill <@eN|sel> "text" — Clear and fill input
+5. type <@eN|sel> "text" — Type into element
+6. read [url] — Agent-readable text (no Chrome needed with URL)
+7. screenshot [--full] [--annotate] — Capture page
+8. eval "js" — Execute JavaScript
+9. get text|html|value|attr|title|url|count|box|styles — Extract data
+10. wait <@eN|ms|--text|--url|--load|--fn> — Wait for condition
+11. scroll <up|down|left|right> [px] — Scroll page
+12. hover/focus/select/check/uncheck — Element interactions
+13. press <key> — Press keyboard key (Enter, Tab, etc)
+14. cookies [set|clear] — Cookie management
+15. storage local|session — Storage management
+16. network route|requests|har — Network interception
+17. state save|load — Auth state persistence
+18. session list|info — Session management
+19. close — Close browser
+Full reference: https://agent-browser.dev/commands
+</browser-automation-reference>
 
 <response_workflow_guidelines>
 <workflow_decision>
@@ -2291,6 +2332,12 @@ Below is the user's query. Please respond in the user's preferred language witho
         'makeItReal',
         'pythonCoding',
         'pythonSandbox',
+        'webFetch',
+        'urlScanner',
+        'quickCompute',
+        'designGenerator',
+        'designSystem',
+        'visualPolish',
       ],
     },
   },

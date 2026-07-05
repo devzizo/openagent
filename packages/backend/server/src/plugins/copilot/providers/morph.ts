@@ -15,52 +15,51 @@ import type {
   ModelConditions,
   PromptMessage,
 } from './types';
-import { CopilotProviderType, ModelInputType, ModelOutputType } from './types';
+import {
+  CopilotProviderModel,
+  CopilotProviderType,
+  ModelOutputType,
+} from './types';
 import { chatToGPTMessage, TextStreamParser } from './utils';
 
 export const DEFAULT_DIMENSIONS = 256;
 
 export type MorphConfig = {
   apiKey?: string;
+  useGateway?: boolean;
 };
 
 export class MorphProvider extends CopilotProvider<MorphConfig> {
   readonly type = CopilotProviderType.Morph;
 
-  readonly models = [
-    {
-      id: 'morph-v2',
-      capabilities: [
-        {
-          input: [ModelInputType.Text],
-          output: [ModelOutputType.Text],
-        },
-      ],
-    },
-    {
-      id: 'morph-v3-fast',
-      capabilities: [
-        {
-          input: [ModelInputType.Text],
-          output: [ModelOutputType.Text],
-        },
-      ],
-    },
-    {
-      id: 'morph-v3-large',
-      capabilities: [
-        {
-          input: [ModelInputType.Text],
-          output: [ModelOutputType.Text],
-        },
-      ],
-    },
-  ];
+  // Models fetched dynamically from Vercel AI Gateway
+  private _models: CopilotProviderModel[] = [];
+  override get models(): CopilotProviderModel[] {
+    return this._models;
+  }
+
+  override async refreshOnlineModels() {
+    try {
+      const { gatewayModelService } = await import('./gateway-models');
+      this._models = await gatewayModelService.getModelsForProvider(
+        CopilotProviderType.Morph
+      );
+      this.onlineModelList = this._models.map(m => m.id);
+      if (this._models.length > 0) {
+        this._models[0].capabilities[0].defaultForOutputType = true;
+        this.logger.log(
+          `Loaded ${this._models.length} Morph models from AI Gateway`
+        );
+      }
+    } catch (e) {
+      this.logger.error('Failed to fetch Morph models from AI Gateway', e);
+    }
+  }
 
   #instance!: VercelOpenAICompatibleProvider;
 
   override configured(): boolean {
-    return !!this.config.apiKey;
+    return !!this.config.useGateway || !!this.config.apiKey;
   }
 
   protected override setup() {
@@ -68,7 +67,9 @@ export class MorphProvider extends CopilotProvider<MorphConfig> {
     this.#instance = createOpenAICompatible({
       name: this.type,
       apiKey: this.config.apiKey,
-      baseURL: 'https://api.morphllm.com/v1',
+      baseURL: this.config.useGateway
+        ? 'https://ai-gateway.vercel.sh/v1'
+        : 'https://api.morphllm.com/v1',
     });
   }
 
@@ -107,7 +108,9 @@ export class MorphProvider extends CopilotProvider<MorphConfig> {
 
       const [system, msgs] = await chatToGPTMessage(messages);
 
-      const modelInstance = this.#instance(model.id);
+      const modelInstance = this.config.useGateway
+        ? model.id
+        : this.#instance(model.id.replace(/^morph\//, ''));
 
       const { text } = await generateText({
         model: modelInstance,
@@ -139,9 +142,11 @@ export class MorphProvider extends CopilotProvider<MorphConfig> {
       metrics.ai.counter('chat_text_stream_calls').add(1, { model: model.id });
       const [system, msgs] = await chatToGPTMessage(messages);
 
-      const modelInstance = this.#instance(model.id);
+      const modelInstance = this.config.useGateway
+        ? model.id
+        : this.#instance(model.id.replace(/^morph\//, ''));
 
-      const { fullStream } = streamText({
+      const { stream } = streamText({
         model: modelInstance,
         system,
         messages: msgs,
@@ -149,7 +154,7 @@ export class MorphProvider extends CopilotProvider<MorphConfig> {
       });
 
       const textParser = new TextStreamParser(model.id);
-      for await (const chunk of fullStream) {
+      for await (const chunk of stream) {
         switch (chunk.type) {
           case 'text-delta': {
             let result = textParser.parse(chunk);
@@ -162,7 +167,7 @@ export class MorphProvider extends CopilotProvider<MorphConfig> {
           }
         }
         if (options.signal?.aborted) {
-          await fullStream.cancel();
+          await stream.cancel();
           break;
         }
       }

@@ -1,10 +1,8 @@
-import { GoogleVertexProviderSettings } from '@ai-sdk/google-vertex';
-import { GoogleVertexAnthropicProviderSettings } from '@ai-sdk/google-vertex/anthropic';
 import { Logger } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import {
-  CoreAssistantMessage,
-  CoreUserMessage,
+  AssistantModelMessage,
+  UserModelMessage,
   DataContent,
   FilePart,
   ImagePart,
@@ -28,7 +26,7 @@ import {
   TokenUsageTotal,
 } from './types';
 
-type ChatMessage = CoreUserMessage | CoreAssistantMessage;
+type ChatMessage = UserModelMessage | AssistantModelMessage;
 
 const SIMPLE_IMAGE_URL_REGEX = /^(https?:\/\/|data:image\/)/;
 const FORMAT_INFER_MAP: Record<string, string> = {
@@ -410,7 +408,7 @@ export abstract class BaseStreamParser<T> {
     this.startTime = Date.now();
   }
 
-  async handleFinish(usage?: Promise<LanguageModelUsage>): Promise<void> {
+  async handleFinish(usage?: PromiseLike<LanguageModelUsage>): Promise<void> {
     if (this.isFinished) return;
     this.isFinished = true;
     const tracker = TokenTracker.getCurrentTracker();
@@ -427,7 +425,7 @@ export abstract class BaseStreamParser<T> {
           const tokenUsage = {
             inputTokens: resolvedUsage.inputTokens || 0,
             outputTokens: resolvedUsage.outputTokens || 0,
-            reasoningTokens: resolvedUsage.reasoningTokens || undefined,
+            reasoningTokens: resolvedUsage.outputTokenDetails?.reasoningTokens || undefined,
             totalTokens:
               (resolvedUsage.inputTokens || 0) +
               (resolvedUsage.outputTokens || 0),
@@ -526,14 +524,16 @@ export class TextStreamParser extends BaseStreamParser<string> {
             result += `\nSummarizing context\n`;
             break;
           }
-          case 'web_search_cloudsway':
-          case 'web_search_exa': {
-            result += `\nSearching the web "${chunk.input.query}"\n`;
+          case 'web_search_parallel': {
+            result += `\nSearching the web "${chunk.input.objective}"\n`;
             break;
           }
-          case 'web_crawl_cloudsway':
-          case 'web_crawl_exa': {
-            result += `\nCrawling the web "${chunk.input.url}"\n`;
+          case 'web_extract_parallel': {
+            result += `\nExtracting from "${chunk.input.urls?.join(',')}"\n`
+            break;
+          }
+          case 'web_crawl_firecrawl': {
+            result += `\nCrawling "${chunk.input.url}"\n`;
             break;
           }
           case 'doc_keyword_search': {
@@ -563,7 +563,7 @@ export class TextStreamParser extends BaseStreamParser<string> {
             result += `\nGenerating python code\n`;
             break;
           }
-          case 'e2b_python_sandbox': {
+          case 'vercel_python_sandbox': {
             result += `\nExecuting python code in sandbox\n`;
             break;
           }
@@ -597,8 +597,7 @@ export class TextStreamParser extends BaseStreamParser<string> {
             }
             break;
           }
-          case 'web_search_cloudsway':
-          case 'web_search_exa': {
+          case 'web_search_parallel': case 'web_extract_parallel': case 'web_crawl_firecrawl': {
             const output = chunk.output;
             if (Array.isArray(output)) {
               result += `\n${this.getWebSearchLinks(output)}\n`;
@@ -621,7 +620,7 @@ export class TextStreamParser extends BaseStreamParser<string> {
             }
             break;
           }
-          case 'e2b_python_sandbox': {
+          case 'vercel_python_sandbox': {
             break;
           }
         }
@@ -865,55 +864,4 @@ export class StreamObjectParser extends BaseStreamParser<StreamObject> {
     this.lastSummary = statusObject;
     return statusObject;
   }
-}
-
-export const VertexModelListSchema = z.object({
-  publisherModels: z.array(
-    z.object({
-      name: z.string(),
-      versionId: z.string(),
-    })
-  ),
-});
-
-export async function getGoogleAuth(
-  options: GoogleVertexAnthropicProviderSettings | GoogleVertexProviderSettings,
-  publisher: 'anthropic' | 'google'
-) {
-  function getBaseUrl() {
-    const { baseURL, location } = options;
-    if (baseURL?.trim()) {
-      try {
-        const url = new URL(baseURL);
-        if (url.pathname.endsWith('/')) {
-          url.pathname = url.pathname.slice(0, -1);
-        }
-        return url.toString();
-      } catch {}
-    } else if (location) {
-      return `https://${location}-aiplatform.googleapis.com/v1beta1/publishers/${publisher}`;
-    }
-    return undefined;
-  }
-
-  async function generateAuthToken() {
-    if (!options.googleAuthOptions) {
-      return undefined;
-    }
-    const auth = new GoogleAuth({
-      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-      ...(options.googleAuthOptions as GoogleAuthOptions),
-    });
-    const client = await auth.getClient();
-    const token = await client.getAccessToken();
-    return token.token;
-  }
-
-  const token = await generateAuthToken();
-
-  return {
-    baseUrl: getBaseUrl(),
-    headers: token ? () => ({ Authorization: `Bearer ${token}` }) : undefined,
-    fetch: options.fetch,
-  };
 }

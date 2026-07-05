@@ -33,7 +33,7 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -b tsconfig.json --verbose",
-    "postinstall": "yarn oa init && yarn husky"
+    "postinstall": "yarn oa init && yarn husky && (npm install -g agent-browser 2>/dev/null && agent-browser install --yes 2>/dev/null || echo '[postinstall] agent-browser install skipped (non-fatal)')"
   },
   "lint-staged": {
     "*": "prettier --write --ignore-unknown --cache",
@@ -168,6 +168,8 @@
     "yjs": "patch:yjs@npm%3A13.6.21#~/.yarn/patches/yjs-npm-13.6.21-c9f1f3397c.patch"
   },
   "dependencies": {
+    "@vercel/sandbox": "^2.4.0",
+    "ai": "^7.0.0",
     "events": "^3.3.0",
     "idb": "^8.0.3"
   }

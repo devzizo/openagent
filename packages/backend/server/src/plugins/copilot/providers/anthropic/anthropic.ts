@@ -2,8 +2,7 @@ import {
   type AnthropicProvider as AnthropicSDKProvider,
   type AnthropicProviderOptions,
 } from '@ai-sdk/anthropic';
-import { type GoogleVertexAnthropicProvider } from '@ai-sdk/google-vertex/anthropic';
-import { AISDKError, generateText, stepCountIs, streamText } from 'ai';
+import { AISDKError, generateText, isStepCount, streamText } from 'ai';
 
 import {
   CopilotProviderSideError,
@@ -28,9 +27,19 @@ import {
 } from '../utils';
 
 export abstract class AnthropicProvider<T> extends CopilotProvider<T> {
-  protected abstract instance:
-    | AnthropicSDKProvider
-    | GoogleVertexAnthropicProvider;
+  protected abstract instance: AnthropicSDKProvider;
+
+  protected isGatewayEnabled() {
+    return false;
+  }
+
+  protected getGatewayModel(model: string) {
+    return model;
+  }
+
+  private getLanguageModel(model: string) {
+    return this.isGatewayEnabled() ? this.getGatewayModel(model) : this.instance(model);
+  }
 
   private handleError(e: any) {
     if (e instanceof UserFriendlyError) {
@@ -81,7 +90,7 @@ export abstract class AnthropicProvider<T> extends CopilotProvider<T> {
         async () => {
           const [system, msgs] = await chatToGPTMessage(messages, true, true);
 
-          const modelInstance = this.instance(model.id);
+          const modelInstance = this.getLanguageModel(model.id);
           const { tools } = await this.getTools(options, model.id);
           return await generateText({
             model: modelInstance,
@@ -92,7 +101,7 @@ export abstract class AnthropicProvider<T> extends CopilotProvider<T> {
               anthropic: this.getAnthropicOptions(model.id),
             },
             tools,
-            stopWhen: stepCountIs(this.MAX_STEPS),
+            stopWhen: isStepCount(this.MAX_STEPS),
           });
         }
       );
@@ -118,12 +127,12 @@ export abstract class AnthropicProvider<T> extends CopilotProvider<T> {
 
     try {
       metrics.ai.counter('chat_text_stream_calls').add(1, { model: model.id });
-      const { fullStream, usage } = await this.getFullStream(
+      const { stream, usage } = await this.getFullStream(
         model,
         messages,
         options
       );
-      for await (const chunk of fullStream) {
+      for await (const chunk of stream) {
         const result = parser.parse(chunk);
         yield result;
         if (options.signal?.aborted) {
@@ -158,12 +167,12 @@ export abstract class AnthropicProvider<T> extends CopilotProvider<T> {
       metrics.ai
         .counter('chat_object_stream_calls')
         .add(1, { model: model.id });
-      const { fullStream, usage } = await this.getFullStream(
+      const { stream, usage } = await this.getFullStream(
         model,
         messages,
         options
       );
-      for await (const chunk of fullStream) {
+      for await (const chunk of stream) {
         const result = parser.parse(chunk);
         if (result) {
           yield result;
@@ -189,8 +198,8 @@ export abstract class AnthropicProvider<T> extends CopilotProvider<T> {
   ) {
     const [system, msgs] = await chatToGPTMessage(messages, true, true);
     const { tools, toolOneTimeStream } = await this.getTools(options, model.id);
-    const { fullStream, usage } = streamText({
-      model: this.instance(model.id),
+    const { stream, usage } = streamText({
+      model: this.getLanguageModel(model.id),
       system,
       messages: msgs,
       abortSignal: options.signal,
@@ -198,9 +207,9 @@ export abstract class AnthropicProvider<T> extends CopilotProvider<T> {
         anthropic: this.getAnthropicOptions(model.id),
       },
       tools,
-      stopWhen: stepCountIs(this.MAX_STEPS),
+      stopWhen: isStepCount(this.MAX_STEPS),
     });
-    return { fullStream: mergeStreams(fullStream, toolOneTimeStream), usage };
+    return { stream: mergeStreams(stream, toolOneTimeStream), usage };
   }
 
   private getAnthropicOptions(model: string) {

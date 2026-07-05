@@ -2,134 +2,78 @@ import {
   createGoogleGenerativeAI,
   type GoogleGenerativeAIProvider,
 } from '@ai-sdk/google';
-import z from 'zod';
 
-import { CopilotProviderType, ModelInputType, ModelOutputType } from '../types';
+import {
+  CopilotProviderModel,
+  CopilotProviderType,
+  ModelOutputType,
+} from '../types';
 import { GeminiProvider } from './gemini';
 
 export type GeminiGenerativeConfig = {
   apiKey: string;
   baseURL?: string;
+  useGateway?: boolean;
 };
 
-const ModelListSchema = z.object({
-  models: z.array(z.object({ name: z.string() })),
-});
+const DEFAULT_VERCEL_AI_GATEWAY_URL = 'https://ai-gateway.vercel.sh/v1';
 
 export class GeminiGenerativeProvider extends GeminiProvider<GeminiGenerativeConfig> {
   override readonly type = CopilotProviderType.Gemini;
 
-  readonly models = [
-    {
-      name: 'Gemini 2.0 Flash',
-      id: 'gemini-2.0-flash-001',
-      capabilities: [
-        {
-          input: [
-            ModelInputType.Text,
-            ModelInputType.Image,
-            ModelInputType.Audio,
-          ],
-          output: [
-            ModelOutputType.Text,
-            ModelOutputType.Object,
-            ModelOutputType.Structured,
-          ],
-          defaultForOutputType: true,
-        },
-      ],
-    },
-    {
-      name: 'Gemini 2.5 Flash',
-      id: 'gemini-2.5-flash',
-      capabilities: [
-        {
-          input: [
-            ModelInputType.Text,
-            ModelInputType.Image,
-            ModelInputType.Audio,
-          ],
-          output: [
-            ModelOutputType.Text,
-            ModelOutputType.Object,
-            ModelOutputType.Structured,
-          ],
-        },
-      ],
-    },
-    {
-      name: 'Gemini 2.5 Pro',
-      id: 'gemini-2.5-pro',
-      capabilities: [
-        {
-          input: [
-            ModelInputType.Text,
-            ModelInputType.Image,
-            ModelInputType.Audio,
-          ],
-          output: [
-            ModelOutputType.Text,
-            ModelOutputType.Object,
-            ModelOutputType.Structured,
-          ],
-        },
-      ],
-    },
-    {
-      name: 'Text Embedding 005',
-      id: 'text-embedding-005',
-      capabilities: [
-        {
-          input: [ModelInputType.Text],
-          output: [ModelOutputType.Embedding],
-        },
-      ],
-    },
-    // not exists yet
-    // {
-    //   name: 'Gemini Embedding',
-    //   id: 'gemini-embedding-001',
-    //   capabilities: [
-    //     {
-    //       input: [ModelInputType.Text],
-    //       output: [ModelOutputType.Embedding],
-    //       defaultForOutputType: true,
-    //     },
-    //   ],
-    // },
-  ];
+  // Models are fetched dynamically from the Vercel AI Gateway.
+  private _models: CopilotProviderModel[] = [];
+  override get models(): CopilotProviderModel[] {
+    return this._models;
+  }
 
   protected instance!: GoogleGenerativeAIProvider;
 
   override configured(): boolean {
-    return !!this.config.apiKey;
+    return this.config.useGateway || !!this.config.apiKey;
   }
 
   protected override setup() {
     super.setup();
     this.instance = createGoogleGenerativeAI({
       apiKey: this.config.apiKey,
-      baseURL: this.config.baseURL,
+      baseURL: this.getBaseURL(),
     });
+  }
+
+  protected override isGatewayEnabled() {
+    return !!this.config.useGateway;
+  }
+
+  protected override getGatewayModel(model: string) {
+    return `google/${model}`;
+  }
+
+  private getBaseURL() {
+    if (this.config.useGateway) {
+      return DEFAULT_VERCEL_AI_GATEWAY_URL;
+    }
+    return this.config.baseURL;
   }
 
   override async refreshOnlineModels() {
     try {
-      const baseUrl =
-        this.config.baseURL ||
-        'https://generativelanguage.googleapis.com/v1beta';
-      if (this.config.apiKey && baseUrl && !this.onlineModelList.length) {
-        const { models } = await fetch(
-          `${baseUrl}/models?key=${this.config.apiKey}`
-        )
-          .then(r => r.json())
-          .then(r => ModelListSchema.parse(r));
-        this.onlineModelList = models.map(model =>
-          model.name.replace('models/', '')
+      const { gatewayModelService } = await import('../gateway-models');
+      this._models = await gatewayModelService.getModelsForProvider(
+        CopilotProviderType.Gemini
+      );
+      this.onlineModelList = this._models.map(m => m.id);
+      if (this._models.length > 0) {
+        const textModel = this._models.find(m =>
+          m.capabilities.some(c => c.output.includes(ModelOutputType.Text))
         );
+        if (textModel) {
+          textModel.capabilities[0].defaultForOutputType = true;
+        }
+        this.logger.log(`Loaded ${this._models.length} models from AI Gateway`);
       }
     } catch (e) {
-      this.logger.error('Failed to fetch available models', e);
+      this.logger.error('Failed to fetch models from AI Gateway', e);
     }
   }
 }

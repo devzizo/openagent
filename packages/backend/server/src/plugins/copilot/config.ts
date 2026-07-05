@@ -1,54 +1,33 @@
+import { z } from 'zod';
+
 import {
   defineModuleConfig,
   StorageJSONSchema,
   StorageProviderConfig,
 } from '../../base';
 import { CopilotPromptScenario } from './prompt/prompts';
-import {
-  AnthropicOfficialConfig,
-  AnthropicVertexConfig,
-} from './providers/anthropic';
-import type { FalConfig } from './providers/fal';
-import { GeminiGenerativeConfig, GeminiVertexConfig } from './providers/gemini';
+import { AnthropicOfficialConfig } from './providers/anthropic';
+import { GeminiGenerativeConfig } from './providers/gemini';
 import { MorphConfig } from './providers/morph';
 import { OpenAIConfig } from './providers/openai';
-import { OracleConfig } from './providers/oracle';
 import { PerplexityConfig } from './providers/perplexity';
-import { OracleSchema, VertexSchema } from './providers/types';
 declare global {
   interface AppConfigSchema {
     copilot: {
       enabled: boolean;
-      unsplash: ConfigItem<{
-        key: string;
-      }>;
-      exa: ConfigItem<{
-        key: string;
-      }>;
-      cloudsway: ConfigItem<{
-        basePath: string;
-        readEndpoint: string;
-        searchEndpoint: string;
-        accessKey: string;
-      }>;
-      e2b: ConfigItem<{
-        key: string;
-      }>;
-      browserUse: ConfigItem<{
-        key: string;
-      }>;
+      unsplash: { key: string };
+      pexels: { key: string };
+      parallel: { key: string };
+      firecrawl: { key: string };
+      agentBrowser: { command: string };
       storage: ConfigItem<StorageProviderConfig>;
       scenarios: ConfigItem<CopilotPromptScenario>;
       providers: {
-        openai: ConfigItem<OpenAIConfig>;
-        fal: ConfigItem<FalConfig>;
-        gemini: ConfigItem<GeminiGenerativeConfig>;
-        geminiVertex: ConfigItem<GeminiVertexConfig>;
-        perplexity: ConfigItem<PerplexityConfig>;
-        anthropic: ConfigItem<AnthropicOfficialConfig>;
-        anthropicVertex: ConfigItem<AnthropicVertexConfig>;
-        morph: ConfigItem<MorphConfig>;
-        oracle: ConfigItem<OracleConfig>;
+        openai: OpenAIConfig;
+        gemini: GeminiGenerativeConfig;
+        perplexity: PerplexityConfig;
+        anthropic: AnthropicOfficialConfig;
+        morph: MorphConfig;
       };
     };
   }
@@ -64,104 +43,110 @@ defineModuleConfig('copilot', {
     default: {
       override_enabled: false,
       scenarios: {
-        audio_transcribing: 'gemini-2.5-flash',
-        chat: 'claude-sonnet-4@20250514',
+        audio_transcribing: 'google/gemini-2.5-flash',
+        chat: 'anthropic/claude-sonnet-4-5-20250514',
         embedding: 'gemini-embedding-001',
         image: 'gpt-image-1',
-        rerank: 'gpt-4.1',
-        coding: 'claude-sonnet-4@20250514',
-        complex_text_generation: 'gpt-4o-2024-08-06',
-        quick_decision_making: 'gpt-5-mini',
-        quick_text_generation: 'gemini-2.5-flash',
-        polish_and_summarize: 'gemini-2.5-flash',
+        rerank: 'openai/gpt-4.1',
+        coding: 'anthropic/claude-sonnet-4-5-20250514',
+        complex_text_generation: 'openai/gpt-4o',
+        quick_decision_making: 'openai/gpt-5-mini',
+        quick_text_generation: 'google/gemini-2.5-flash',
+        polish_and_summarize: 'google/gemini-2.5-flash',
       },
     },
   },
-  'providers.openai': {
-    desc: 'The config for the openai provider.',
-    default: {
-      apiKey: '',
-      baseURL: 'https://api.openai.com/v1',
-    },
+  'providers.openai.apiKey': {
+    desc: 'API key for the openai provider.',
+    default: '',
+    env: 'OPENAI_API_KEY',
     link: 'https://github.com/openai/openai-node',
   },
-  'providers.fal': {
-    desc: 'The config for the fal provider.',
-    default: {
-      apiKey: '',
-    },
+  'providers.openai.baseURL': {
+    desc: 'Base URL for the openai provider.',
+    default: 'https://api.openai.com/v1',
   },
-  'providers.gemini': {
-    desc: 'The config for the gemini provider.',
-    default: {
-      apiKey: '',
-      baseURL: 'https://generativelanguage.googleapis.com/v1beta',
-    },
+  'providers.openai.oldApiStyle': {
+    desc: 'Whether to use the legacy (pre-Responses) OpenAI API style.',
+    default: false,
   },
-  'providers.geminiVertex': {
-    desc: 'The config for the gemini provider in Google Vertex AI.',
-    default: {},
-    schema: VertexSchema,
+  'providers.openai.useGateway': {
+    desc: 'Whether to route openai calls through Vercel AI Gateway.',
+    default: true,
   },
-  'providers.perplexity': {
-    desc: 'The config for the perplexity provider.',
-    default: {
-      apiKey: '',
-    },
+  'providers.gemini.apiKey': {
+    desc: 'API key for the gemini provider.',
+    default: '',
+    env: 'GOOGLE_GENERATIVE_AI_API_KEY',
   },
-  'providers.anthropic': {
-    desc: 'The config for the anthropic provider.',
-    default: {
-      apiKey: '',
-      baseURL: 'https://api.anthropic.com/v1',
-    },
+  'providers.gemini.baseURL': {
+    desc: 'Base URL for the gemini provider.',
+    default: 'https://generativelanguage.googleapis.com/v1beta',
   },
-  'providers.anthropicVertex': {
-    desc: 'The config for the anthropic provider in Google Vertex AI.',
-    default: {},
-    schema: VertexSchema,
+  'providers.gemini.useGateway': {
+    desc: 'Whether to route gemini calls through Vercel AI Gateway.',
+    default: true,
   },
-  'providers.morph': {
-    desc: 'The config for the morph provider.',
-    default: {},
+  'providers.perplexity.apiKey': {
+    desc: 'API key for the perplexity provider.',
+    default: '',
+    env: 'PERPLEXITY_API_KEY',
   },
-  'providers.oracle': {
-    desc: 'The config for the oracle provider.',
-    default: {},
-    schema: OracleSchema,
+  'providers.perplexity.endpoint': {
+    desc: 'Custom base URL for the perplexity provider (only used when useGateway is false).',
+    default: undefined,
+    shape: z.string().optional(),
   },
-  unsplash: {
-    desc: 'The config for the unsplash key.',
-    default: {
-      key: '',
-    },
+  'providers.perplexity.useGateway': {
+    desc: 'Whether to route perplexity calls through Vercel AI Gateway.',
+    default: true,
   },
-  exa: {
-    desc: 'The config for the exa web search key.',
-    default: {
-      key: '',
-    },
+  'providers.anthropic.apiKey': {
+    desc: 'API key for the anthropic provider.',
+    default: '',
+    env: 'ANTHROPIC_API_KEY',
   },
-  cloudsway: {
-    desc: 'The config for the Cloudsway web search and reader.',
-    default: {
-      basePath: 'https://searchapi.cloudsway.net',
-      readEndpoint: '',
-      searchEndpoint: '',
-      accessKey: '',
-    },
+  'providers.anthropic.baseURL': {
+    desc: 'Base URL for the anthropic provider.',
+    default: 'https://api.anthropic.com/v1',
   },
-  browserUse: {
-    desc: 'The config for the browser use key',
-    default: {
-      key: '',
-    },
+  'providers.anthropic.useGateway': {
+    desc: 'Whether to route anthropic calls through Vercel AI Gateway.',
+    default: true,
   },
-  e2b: {
-    desc: 'The config for the e2b key',
-    default: {
-      key: '',
-    },
+  'providers.morph.apiKey': {
+    desc: 'API key for the morph provider (not needed when useGateway=true).',
+    default: '',
+    env: 'MORPH_API_KEY',
+  },
+  'providers.morph.useGateway': {
+    desc: 'Whether to route morph calls through Vercel AI Gateway.',
+    default: true,
+  },
+  'unsplash.key': {
+    desc: 'API key for Unsplash image search.',
+    default: '',
+    env: 'UNSPLASH_ACCESS_KEY',
+  },
+  'pexels.key': {
+    desc: 'API key for Pexels image search.',
+    default: '',
+    env: 'PEXELS_API_KEY',
+  },
+  'parallel.key': {
+    desc: 'API key for Parallel web search and extract.',
+    default: '',
+    env: 'PARALLEL_API_KEY',
+  },
+  'firecrawl.key': {
+    desc: 'API key for Firecrawl crawling and extraction.',
+    default: '',
+    env: 'FIRECRAWL_API_KEY',
+  },
+  'agentBrowser.command': {
+    desc: 'Command to invoke agent-browser CLI (used as fallback; primary path is Vercel Sandbox).',
+    default: 'agent-browser',
+    env: 'AGENT_BROWSER_COMMAND',
   },
   storage: {
     desc: 'The config for the storage provider.',

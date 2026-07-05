@@ -9,9 +9,9 @@ import { CopilotProviderSideError, metrics } from '../../../base';
 import { CopilotProvider } from './provider';
 import {
   CopilotChatOptions,
+  CopilotProviderModel,
   CopilotProviderType,
   ModelConditions,
-  ModelInputType,
   ModelOutputType,
   PromptMessage,
 } from './types';
@@ -20,7 +20,10 @@ import { chatToGPTMessage, CitationParser } from './utils';
 export type PerplexityConfig = {
   apiKey: string;
   endpoint?: string;
+  useGateway?: boolean;
 };
+
+const DEFAULT_VERCEL_AI_GATEWAY_URL = 'https://ai-gateway.vercel.sh/v1';
 
 const PerplexityErrorSchema = z.union([
   z.object({
@@ -46,62 +49,55 @@ type PerplexityError = z.infer<typeof PerplexityErrorSchema>;
 export class PerplexityProvider extends CopilotProvider<PerplexityConfig> {
   readonly type = CopilotProviderType.Perplexity;
 
-  readonly models = [
-    {
-      name: 'Sonar',
-      id: 'sonar',
-      capabilities: [
-        {
-          input: [ModelInputType.Text],
-          output: [ModelOutputType.Text],
-          defaultForOutputType: true,
-        },
-      ],
-    },
-    {
-      name: 'Sonar Pro',
-      id: 'sonar-pro',
-      capabilities: [
-        {
-          input: [ModelInputType.Text],
-          output: [ModelOutputType.Text],
-        },
-      ],
-    },
-    {
-      name: 'Sonar Reasoning',
-      id: 'sonar-reasoning',
-      capabilities: [
-        {
-          input: [ModelInputType.Text],
-          output: [ModelOutputType.Text],
-        },
-      ],
-    },
-    {
-      name: 'Sonar Reasoning Pro',
-      id: 'sonar-reasoning-pro',
-      capabilities: [
-        {
-          input: [ModelInputType.Text],
-          output: [ModelOutputType.Text],
-        },
-      ],
-    },
-  ];
+  // Models fetched dynamically from Vercel AI Gateway
+  private _models: CopilotProviderModel[] = [];
+  override get models(): CopilotProviderModel[] {
+    return this._models;
+  }
+
+  override async refreshOnlineModels() {
+    try {
+      const { gatewayModelService } = await import('./gateway-models');
+      this._models = await gatewayModelService.getModelsForProvider(
+        CopilotProviderType.Perplexity
+      );
+      this.onlineModelList = this._models.map(m => m.id);
+      if (this._models.length > 0) {
+        this._models[0].capabilities[0].defaultForOutputType = true;
+        this.logger.log(
+          `Loaded ${this._models.length} Perplexity models from AI Gateway`
+        );
+      }
+    } catch (e) {
+      this.logger.error('Failed to fetch Perplexity models from AI Gateway', e);
+    }
+  }
 
   #instance!: VercelPerplexityProvider;
 
   override configured(): boolean {
-    return !!this.config.apiKey;
+    return this.config.useGateway || !!this.config.apiKey;
   }
 
   protected override setup() {
     super.setup();
     this.#instance = createPerplexity({
       apiKey: this.config.apiKey,
-      baseURL: this.config.endpoint,
+      baseURL: this.getBaseURL(),
     });
+  }
+
+  private getBaseURL() {
+    if (this.config.useGateway) {
+      return DEFAULT_VERCEL_AI_GATEWAY_URL;
+    }
+    return this.config.endpoint;
+  }
+
+  private getLanguageModel(model: string) {
+    return this.config.useGateway
+      ? `perplexity/${model}`
+      : this.#instance(model);
   }
 
   async text(
@@ -118,7 +114,7 @@ export class PerplexityProvider extends CopilotProvider<PerplexityConfig> {
 
       const [system, msgs] = await chatToGPTMessage(messages, false);
 
-      const modelInstance = this.#instance(model.id);
+      const modelInstance = this.getLanguageModel(model.id);
 
       const { text, sources } = await generateText({
         model: modelInstance,
@@ -158,7 +154,7 @@ export class PerplexityProvider extends CopilotProvider<PerplexityConfig> {
 
       const [system, msgs] = await chatToGPTMessage(messages, false);
 
-      const modelInstance = this.#instance(model.id);
+      const modelInstance = this.getLanguageModel(model.id);
 
       const stream = streamText({
         model: modelInstance,
@@ -170,7 +166,7 @@ export class PerplexityProvider extends CopilotProvider<PerplexityConfig> {
       });
 
       const parser = new CitationParser();
-      for await (const chunk of stream.fullStream) {
+      for await (const chunk of stream.stream) {
         switch (chunk.type) {
           case 'source': {
             if (chunk.sourceType === 'url') {
