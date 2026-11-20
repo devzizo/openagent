@@ -86,7 +86,47 @@ export class MailSender {
     }
   }
 
+  private async sendViaResend(name: string, options: SendOptions) {
+    metrics.mail.counter('send_total').add(1, { name });
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: this.config.mailer.SMTP.sender,
+          to: [options.to],
+          subject: options.subject,
+          html: options.html,
+        }),
+      });
+
+      if (!res.ok) {
+        metrics.mail.counter('rejected_total').add(1, { name });
+        this.logger.error(
+          `Mail [${name}] rejected by Resend: ${res.status} ${await res.text()}`
+        );
+        return false;
+      }
+
+      metrics.mail.counter('accepted_total').add(1, { name });
+      this.logger.debug(`Mail [${name}] sent successfully via Resend.`);
+      return true;
+    } catch (e) {
+      metrics.mail.counter('failed_total').add(1, { name });
+      this.logger.error(`Failed to send mail [${name}] via Resend.`, e);
+      return false;
+    }
+  }
+
   async send(name: string, options: SendOptions) {
+    // Railway blocks outbound SMTP on lower-tier plans; use Resend's HTTPS API when a key is set.
+    if (process.env.RESEND_API_KEY) {
+      return this.sendViaResend(name, options);
+    }
+
     if (!this.smtp) {
       this.logger.warn(`Mailer SMTP transport is not configured to send mail.`);
       return null;
